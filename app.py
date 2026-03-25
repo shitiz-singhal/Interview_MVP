@@ -93,12 +93,12 @@ if audio_bytes and candidate_name and evaluator_names:
 
                 # --- THE AI MAGIC HAPPENS HERE ---
                 # --- THE BULLETPROOF EVENT LOOP FIX ---
-try:
-    loop = asyncio.get_event_loop()
-except RuntimeError:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-# --------------------------------------
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                # --------------------------------------
                 aai.settings.api_key = aai_api_key
                 transcriber = aai.Transcriber()
                 
