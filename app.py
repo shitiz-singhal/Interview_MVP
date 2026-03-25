@@ -1,9 +1,14 @@
-# --- ABSOLUTE TOP OF THE FILE ---
 import asyncio
+import nest_asyncio
+
+# This "patches" the loop so it doesn't crash on Python 3.14
 try:
-    asyncio.get_running_loop()
+    loop = asyncio.get_event_loop()
 except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+nest_asyncio.apply()
 
 import streamlit as st
 from audio_recorder_streamlit import audio_recorder
