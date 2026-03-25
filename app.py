@@ -4,9 +4,18 @@ import assemblyai as aai
 import os 
 from anthropic import Anthropic
 from docx import Document
+import asyncio # <-- NEW: Import asyncio
+
+# --- NEW: CLOUD EVENT LOOP FIX ---
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+# ---------------------------------
 
 # --- SETUP THE FOLDER ---
 SAVE_FOLDER = "Evaluations_History"
+# ... (the rest of your code continues exactly as normal below this)
 os.makedirs(SAVE_FOLDER, exist_ok=True)
 
 # --- NEW: SIDEBAR FOR SETTINGS ---
