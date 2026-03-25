@@ -18,12 +18,9 @@ from docx import Document
 SAVE_FOLDER = "Evaluations_History"
 os.makedirs(SAVE_FOLDER, exist_ok=True)
 
-# --- NEW: SIDEBAR FOR SETTINGS ---
-with st.sidebar:
-    st.header("⚙️ Settings")
-    st.write("Paste your API keys here to test the app.")
-    aai_api_key = st.text_input("AssemblyAI API Key", type="password") 
-    anthropic_api_key = st.text_input("Anthropic API Key", type="password") # <-- NEW: Box for Anthropic key
+# Pull keys securely from Streamlit Secrets
+aai_api_key = st.secrets["AAI_API_KEY"]
+anthropic_api_key = st.secrets["ANTHROPIC_API_KEY"]
 
 st.title("Interview Evaluator MVP")
 
