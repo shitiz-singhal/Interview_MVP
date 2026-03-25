@@ -1,10 +1,16 @@
+# --- ABSOLUTE TOP OF THE FILE ---
+import asyncio
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
 import streamlit as st
 from audio_recorder_streamlit import audio_recorder
 import assemblyai as aai
 import os 
 from anthropic import Anthropic
 from docx import Document
-import asyncio # <-- NEW: Import asyncio
 
 # --- SETUP THE FOLDER ---
 SAVE_FOLDER = "Evaluations_History"
