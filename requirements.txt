@@ -3,3 +3,4 @@ audio-recorder-streamlit
 assemblyai
 anthropic
 python-docx
+nest_asyncio
