@@ -1,0 +1,5 @@
+streamlit==1.42.0
+audio-recorder-streamlit
+assemblyai
+anthropic
+python-docx
