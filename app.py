@@ -6,16 +6,8 @@ from anthropic import Anthropic
 from docx import Document
 import asyncio # <-- NEW: Import asyncio
 
-# --- NEW: CLOUD EVENT LOOP FIX ---
-try:
-    asyncio.get_running_loop()
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
-# ---------------------------------
-
 # --- SETUP THE FOLDER ---
 SAVE_FOLDER = "Evaluations_History"
-# ... (the rest of your code continues exactly as normal below this)
 os.makedirs(SAVE_FOLDER, exist_ok=True)
 
 # --- NEW: SIDEBAR FOR SETTINGS ---
@@ -92,6 +84,13 @@ if audio_bytes and candidate_name and evaluator_names:
 
 
                 # --- THE AI MAGIC HAPPENS HERE ---
+                # --- THE BULLETPROOF EVENT LOOP FIX ---
+try:
+    loop = asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+# --------------------------------------
                 aai.settings.api_key = aai_api_key
                 transcriber = aai.Transcriber()
                 
