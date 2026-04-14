@@ -19,44 +19,62 @@ SAVE_FOLDER = "Evaluations_History"
 os.makedirs(SAVE_FOLDER, exist_ok=True)
 
 # Pull keys securely from Streamlit Secrets
-aai_api_key = st.secrets["AAI_API_KEY"]
-anthropic_api_key = st.secrets["ANTHROPIC_API_KEY"]
+aai_api_key = st.secrets.get("AAI_API_KEY", "")
+anthropic_api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
 
 st.title("Interview Evaluator MVP")
 
 candidate_name = st.text_input("Candidate Name:")
-# FIX 1: Ask for multiple evaluators
 evaluator_names = st.text_input("Evaluator Names (comma-separated, e.g., Jane, John):")
-
-# NEW: Let the user tell the AI exactly how many people are in the room
 total_speakers = st.number_input("Total number of people speaking (Candidate + Evaluators):", min_value=2, max_value=10, value=3)
 
 st.divider()
 
-tab1, tab2, tab3 = st.tabs(["Upload an Audio File", "Record Live Audio", "Dashboard (Past Evaluations)"])
+# --- THE NEW TAB STRUCTURE ---
+tab1, tab2, tab3, tab4 = st.tabs(["Upload Audio File", "Record Live Audio", "Upload Text Transcript", "Dashboard"])
 
 audio_bytes = None 
+transcript_text = None 
 
-# --- TAB 1: UPLOADING ---
+# --- TAB 1: UPLOADING AUDIO ---
 with tab1:
-    uploaded_file = st.file_uploader("Choose a file", type=["wav", "mp3", "m4a", "mpeg"])
+    uploaded_file = st.file_uploader("Choose an audio file", type=["wav", "mp3", "m4a", "mpeg"])
     if uploaded_file is not None:
         audio_bytes = uploaded_file.read() 
         st.audio(audio_bytes) 
-        st.success("File uploaded successfully!")
+        st.success("Audio file uploaded successfully!")
 
-# --- TAB 2: RECORDING ---
+# --- TAB 2: RECORDING AUDIO ---
 with tab2:
-    # Notice the pause_threshold=300.0 is here!
     recorded_audio = audio_recorder(text="Record", recording_color="#e81e1e", neutral_color="#6aa36f", pause_threshold=300.0)
     if recorded_audio:
         audio_bytes = recorded_audio 
         st.audio(audio_bytes, format="audio/wav") 
         st.success("Recording captured successfully!")
 
-# --- TAB 3: THE DASHBOARD ---
+# --- TAB 3: UPLOADING TEXT TRANSCRIPT ---
 with tab3:
+    uploaded_text = st.file_uploader("Upload a text transcript (.txt)", type=["txt"])
+    if uploaded_text is not None:
+        # Read the file and decode it into a standard Python string
+        transcript_text = uploaded_text.read().decode("utf-8")
+        st.success("Text transcript uploaded successfully!")
+        with st.expander("👀 View Uploaded Transcript"):
+            st.text(transcript_text)
+
+# --- TAB 4: THE DASHBOARD ---
+with tab4:
     st.subheader("Your Past Evaluations")
+    
+    # CLEAR DASHBOARD BUTTON
+    colA, colB = st.columns([3, 1])
+    with colB:
+        if st.button("🗑️ Clear Dashboard"):
+            for file_name in os.listdir(SAVE_FOLDER):
+                os.remove(os.path.join(SAVE_FOLDER, file_name))
+            st.success("Dashboard cleared!")
+            st.rerun()
+
     saved_files = os.listdir(SAVE_FOLDER)
     
     if len(saved_files) == 0:
@@ -73,72 +91,85 @@ with tab3:
                 st.divider()
 
 # --- SUBMIT BUTTON & AI PROCESSING ---
-if audio_bytes and candidate_name and evaluator_names:
+if (audio_bytes or transcript_text) and candidate_name and evaluator_names:
     if st.button("Submit for AI Evaluation"):
         
-        # Stop them if they forgot to put the API key in the sidebar
-        if not aai_api_key:
-            st.error("⚠️ Please enter your AssemblyAI API Key in the sidebar on the left!")
-        else:
-            # 1. Save the audio temporarily
+        final_transcript_to_evaluate = ""
+
+        # ==========================================
+        # PATH A: WE HAVE AUDIO (Needs AssemblyAI)
+        # ==========================================
+        if audio_bytes:
+            if not aai_api_key:
+                st.error("⚠️ Please enter your AssemblyAI API Key in the sidebar/secrets!")
+                st.stop()
+                
             with open("temp_audio.wav", "wb") as f:
                 f.write(audio_bytes)
                 
-            # st.spinner creates a nice loading animation while the AI thinks
-            with st.spinner(f"Transcribing and identifying speakers for {candidate_name}... This might take a minute."):
-
-
-                # --- THE AI MAGIC HAPPENS HERE ---
-                # --- THE BULLETPROOF EVENT LOOP FIX ---
+            with st.spinner(f"Transcribing audio for {candidate_name}..."):
                 try:
                     loop = asyncio.get_event_loop()
                 except RuntimeError:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                # --------------------------------------
+                    
                 aai.settings.api_key = aai_api_key
                 transcriber = aai.Transcriber()
-                
-                # FIX 2: We explicitly tell it how many speakers to expect!
                 config = aai.TranscriptionConfig(
                     speaker_labels=True,
-                    speakers_expected=total_speakers, # <-- NEW: Forces the AI to find this many voices
+                    speakers_expected=total_speakers,
                     speech_models=["universal-2"] 
                 )
                 
-                # Send the file and wait for the result
                 transcript = transcriber.transcribe("temp_audio.wav", config)
 
                 if transcript.error:
-                    st.error(f"Oh no, the transcription failed: {transcript.error}")
+                    st.error(f"Transcription failed: {transcript.error}")
+                    st.stop()
                 else:
-                    st.success("Transcription complete!")
+                    st.success("Audio Transcription complete!")
                     
-                    # Format the text
                     full_transcript_text = f"Interview Transcript: {candidate_name} & Evaluators: {evaluator_names}\n"
                     full_transcript_text += "="*50 + "\n\n"
                     for utterance in transcript.utterances:
                         speaker_name = f"Speaker {utterance.speaker}"
                         full_transcript_text += f"{speaker_name}: {utterance.text}\n\n"
                     
-                    with st.expander("👀 Click here to view the raw transcript"):
-                        st.text(full_transcript_text)
+                    final_transcript_to_evaluate = full_transcript_text
                     
                     # Save Transcript to Dashboard
                     transcript_doc_name = f"{candidate_name}_Transcript.txt"
                     with open(os.path.join(SAVE_FOLDER, transcript_doc_name), "w") as f:
                         f.write(full_transcript_text)
-                        
-                    # --- NEW: THE ANTHROPIC (CLAUDE) EVALUATOR ---
-                    if not anthropic_api_key:
-                        st.warning("Transcript saved! Add an Anthropic API key in the sidebar to generate an evaluation.")
-                    else:
-                        with st.spinner("Claude is analyzing responses and generating the evaluation scorecard..."):
-                            
-                            client = Anthropic(api_key=anthropic_api_key)
-                            
-                           # This is your "System Prompt" - The instructions for the AI Panelist
-                            rubric_instructions = f"""
+
+        # ==========================================
+        # PATH B: WE HAVE TEXT (Skip AssemblyAI)
+        # ==========================================
+        elif transcript_text:
+            st.info("Direct text uploaded. Skipping AssemblyAI transcription.")
+            
+            final_transcript_to_evaluate = f"Interview Transcript: {candidate_name} & Evaluators: {evaluator_names}\n"
+            final_transcript_to_evaluate += "="*50 + "\n\n"
+            final_transcript_to_evaluate += transcript_text
+            
+            # Save Transcript to Dashboard
+            transcript_doc_name = f"{candidate_name}_Transcript.txt"
+            with open(os.path.join(SAVE_FOLDER, transcript_doc_name), "w", encoding="utf-8") as f:
+                f.write(final_transcript_to_evaluate)
+
+        # ==========================================
+        # ANTHROPIC EVALUATION (Applies to both paths)
+        # ==========================================
+        if final_transcript_to_evaluate:
+            if not anthropic_api_key:
+                st.warning("Transcript ready! Add an Anthropic API key to your secrets to generate an evaluation.")
+            else:
+                with st.spinner("Claude is analyzing responses and generating the evaluation scorecard..."):
+                    
+                    client = Anthropic(api_key=anthropic_api_key)
+                    
+                    rubric_instructions = f"""
 You are an expert MBA Admissions Committee Evaluator for a highly competitive program. Your task is to critically evaluate an incoming MBA candidate's interview transcript and generate a formal assessment report. The candidate's name is {candidate_name} and the evaluators were {evaluator_names}.
 
 CRITICAL INSTRUCTIONS ON STRICTNESS & BIAS (TEMPERATURE CHECK):
@@ -209,36 +240,30 @@ Final Recommendation:
 
 OUTPUT CONSTRAINT: Do not use any Markdown formatting like asterisks (**) or hashes (#). Output strictly in plain text.
 """
-                            
-                            # Send the instructions and the transcript to Claude 3 Haiku
-                            response = client.messages.create(
-                                model="claude-haiku-4-5", # <-- FIX: Pointing to the newest Haiku model
-                                max_tokens=1500, # Claude requires us to set a limit on how long its response can be
-                                system=rubric_instructions, # Anthropic puts the system prompt here
-                                messages=[
-                                    {"role": "user", "content": f"Here is the interview transcript to evaluate:\n\n{full_transcript_text}"}
-                                ]
-                            )
-                            
-                            # Extract the text from Claude's response
-                            evaluation_result = response.content[0].text
-                            
-                            # Show the final evaluation on the screen!
-                            st.subheader(f"📊 Evaluation Report: {candidate_name}")
-                            st.markdown(evaluation_result)
-                            
-                            # Save the Evaluation to the Dashboard
-                            # --- NEW: Create and save a Word Document (.docx) ---
-                            doc = Document()
-                            doc.add_heading(f'Evaluation Report: {candidate_name}', level=1)
-                            
-                            # We split the text line-by-line so the Word doc keeps your neat paragraphs
-                            for line in evaluation_result.split('\n'):
-                                doc.add_paragraph(line)
-                                
-                            eval_doc_name = f"{candidate_name}_Evaluation.docx"
-                            doc_path = os.path.join(SAVE_FOLDER, eval_doc_name)
-                            doc.save(doc_path)
-                            # ----------------------------------------------------
-                                
-                            st.balloons() # Celebration time!
+                    
+                    response = client.messages.create(
+                        model="claude-haiku-4-5", 
+                        max_tokens=1500, 
+                        system=rubric_instructions, 
+                        messages=[
+                            {"role": "user", "content": f"Here is the interview transcript to evaluate:\n\n{final_transcript_to_evaluate}"}
+                        ]
+                    )
+                    
+                    evaluation_result = response.content[0].text
+                    
+                    st.subheader(f"📊 Evaluation Report: {candidate_name}")
+                    st.markdown(evaluation_result)
+                    
+                    # Save to Word Document
+                    doc = Document()
+                    doc.add_heading(f'Evaluation Report: {candidate_name}', level=1)
+                    
+                    for line in evaluation_result.split('\n'):
+                        doc.add_paragraph(line)
+                        
+                    eval_doc_name = f"{candidate_name}_Evaluation.docx"
+                    doc_path = os.path.join(SAVE_FOLDER, eval_doc_name)
+                    doc.save(doc_path)
+                        
+                    st.balloons()
